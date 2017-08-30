@@ -28,13 +28,13 @@ Example
 '''
 
 import argparse
-import gzip
-import math
 import re
-import sys
-from copy import deepcopy
 
-import numpy
+import numpy as np
+from sklearn.preprocessing import normalize as sk_normalize
+
+import embedding_tools as emb
+
 
 IS_NUMBER = re.compile(r'\d+.*')
 IS_NON_WORD = re.compile(r'\W+')
@@ -50,43 +50,6 @@ def norm_word(word):
         return word.lower()
 
 
-def read_word_vecs(fname):
-    '''Read all the word vectors and normalize them'''
-    wvecs = {}
-    if fname.endswith('.gz'):
-        f_open = gzip.open
-    else:
-        f_open = open
-
-    with f_open(fname) as f:
-        for idx, line in enumerate(f):
-            row = line.strip().lower().split()
-            if idx == 0 and len(row) == 2:
-                _, _dim = row
-            else:
-                word = row[0]
-                wvecs[word] = numpy.zeros(len(row) - 1, dtype=float)
-                for index, vec_val in enumerate(row[1:]):
-                    wvecs[word][index] = float(vec_val)
-                # normalize weight vector
-                wvecs[word] /= math.sqrt((wvecs[word]**2).sum() + 1e-6)
-
-    print("Vectors read from: " + fname)
-    return wvecs
-
-
-def print_word_vecs(wvecs, out_fname):
-    '''Write word vectors to file'''
-    print("Writing down the vectors in: " + out_fname)
-    with open(out_fname, 'w') as out_f:
-        for word in wvecs:
-            out_f.write(word + ' ')
-            for val in wvecs[word]:
-                # out_f.write("{:f} ".format(val))
-                out_f.write("{:f} ".format(val))
-            out_f.write("\n")
-
-
 def read_lexicon(fname):
     '''Read the PPDB word relations as a dictionary'''
     lexicon = {}
@@ -97,48 +60,57 @@ def read_lexicon(fname):
     return lexicon
 
 
-def retrofit(wvecs, lexicon, n_iters):
+def retrofit(id2word, embeds, lexicon, n_iters):
     '''Retrofit word vectors to a lexicon'''
-    new_wvecs = deepcopy(wvecs)
-    wv_voc = set(new_wvecs.keys())
-    loop_voc = wv_voc.intersection(set(lexicon.keys()))
+    new_embeds = np.copy(embeds)
+    loop_voc = list(set(id2word) & set(lexicon))
+    print("Ratio of word presence: {:.0f}% in embs, {:.0f}% in lex."
+          "".format(len(loop_voc) / len(id2word) * 100,
+                    len(loop_voc) / len(lexicon) * 100))
+    # print('len(lexicon)**:', len(lexicon))
+    # print('len(id2word)**:', len(id2word))
+
     for _ in range(n_iters):
         # loop through every node also in ontology (else just use data estimate)
         for word in loop_voc:
-            ctxt_words = set(lexicon[word]).intersection(wv_voc)
+            ctxt_words = set(lexicon[word]) & set(id2word)
             n_ctxt = len(ctxt_words)
             # no neighbor, pass - use data estimate
             if n_ctxt == 0:
                 continue
             # the weight of the data estimate if the number of neighbors
-            new_vec = n_ctxt * wvecs[word]
+            new_vec = n_ctxt * emb.emb_lkup(word, id2word, embeds)
             # loop over neighbors and add to new vector (currently with weight 1)
             for pp_wrd in ctxt_words:
-                new_vec += new_wvecs[pp_wrd]
-            new_wvecs[word] = new_vec / (2 * n_ctxt)
-    return new_wvecs
+                new_vec += emb.emb_lkup(pp_wrd, id2word, new_embeds)
+            new_embeds[id2word.index(word)] = new_vec / (2 * n_ctxt)
+
+    return new_embeds
 
 
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', required=True,
+    parser.add_argument('-i', '--in_fpath', required=True,
                         help="Input word vecs")
     parser.add_argument('-l', '--lexicon', required=True,
                         help="Lexicon file name")
-    parser.add_argument('-o', '--output', required=True,
+    parser.add_argument('-o', '--out_fpath', required=True,
                         help="Output word vecs")
     parser.add_argument('-n', '--n_iters', type=int, default=10, required=True,
                         help="Num iterations")
-    args = parser.parse_args()
+    argp = parser.parse_args()
 
-    wvecs = read_word_vecs(args.input)
-    lexicon = read_lexicon(args.lexicon)
-    n_iters = int(args.n_iters)
-    out_fname = args.output
+    # wvecs = read_word_vecs(argp.in_fpath)
+    id2word, embeds_arr = emb.load_embeds_np(argp.in_fpath)
+    embeds_arr = sk_normalize(embeds_arr, axis=1)   # TODO: remove!?
+    lexicon = read_lexicon(argp.lexicon)
 
     # Enrich the word vectors using ppdb and print the enriched vectors
-    print_word_vecs(retrofit(wvecs, lexicon, n_iters), out_fname)
+    embeds_out = retrofit(id2word, embeds_arr, lexicon, argp.n_iters)
+
+    emb.save_embeds_np(id2word, embeds_out, argp.out_fpath)
+    # print_word_vecs(embeds_out, argp.out_fpath)
 
 
 if __name__ == '__main__':
