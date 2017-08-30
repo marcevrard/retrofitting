@@ -59,14 +59,17 @@ def read_word_vecs(fname):
         f_open = open
 
     with f_open(fname) as f:
-        for line in f:
-            line = line.strip().lower()
-            word = line.split()[0]
-            wvecs[word] = numpy.zeros(len(line.split()) - 1, dtype=float)
-            for index, vec_val in enumerate(line.split()[1:]):
-                wvecs[word][index] = float(vec_val)
-            # normalize weight vector
-            wvecs[word] /= math.sqrt((wvecs[word]**2).sum() + 1e-6)
+        for idx, line in enumerate(f):
+            row = line.strip().lower().split()
+            if idx == 0 and len(row) == 2:
+                _, _dim = row
+            else:
+                word = row[0]
+                wvecs[word] = numpy.zeros(len(row) - 1, dtype=float)
+                for index, vec_val in enumerate(row[1:]):
+                    wvecs[word][index] = float(vec_val)
+                # normalize weight vector
+                wvecs[word] /= math.sqrt((wvecs[word]**2).sum() + 1e-6)
 
     print("Vectors read from: " + fname)
     return wvecs
