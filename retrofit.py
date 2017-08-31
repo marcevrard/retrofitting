@@ -23,11 +23,11 @@ https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
 
 Example
 ```````
-    ./retrofit.py   -i embeddings/sample_vec.txt -o out_vec.txt \
-                    -l lexicons/ppdb-xl.txt -n 10
+    ./retrofit.py  -i data/vectors_big_16_no_unk_tag.npy -l lexicons/ppdb-xl.txt -n 10
 '''
 
 import argparse
+import os
 import re
 
 import numpy as np
@@ -102,7 +102,7 @@ def main():
                         help="Input word vecs")
     parser.add_argument('-l', '--lexicon', required=True,
                         help="Lexicon file name")
-    parser.add_argument('-o', '--out_fpath', required=True,
+    parser.add_argument('-o', '--out_fpath',
                         help="Output word vecs")
     parser.add_argument('-n', '--n_iters', type=int, default=10, required=True,
                         help="Num iterations")
@@ -116,7 +116,13 @@ def main():
     # Enrich the word vectors using ppdb and print the enriched vectors
     embeds_out = retrofit(id2word, embeds_arr, lexicon, argp.n_iters)
 
-    emb.save_embeds_np(id2word, embeds_out, argp.out_fpath)
+    if argp.out_fpath:
+        out_fpath = argp.out_fpath
+    else:
+        out_fpath = os.path.join(
+            'embeddings', os.path.splitext(os.path.basename(argp.in_fpath))[0] + '_rtf')
+
+    emb.save_embeds_np(id2word, embeds_out, out_fpath)
     # print_word_vecs(embeds_out, argp.out_fpath)
 
 
