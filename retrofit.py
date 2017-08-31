@@ -31,9 +31,10 @@ import argparse
 import re
 
 import numpy as np
-from sklearn.preprocessing import normalize as sk_normalize
+# from sklearn.preprocessing import normalize as sk_normalize
 
 import embedding_tools as emb
+import print_tools as prn
 
 
 IS_NUMBER = re.compile(r'\d+.*')
@@ -63,27 +64,33 @@ def read_lexicon(fname):
 def retrofit(id2word, embeds, lexicon, n_iters):
     '''Retrofit word vectors to a lexicon'''
     new_embeds = np.copy(embeds)
-    loop_voc = list(set(id2word) & set(lexicon))
+    word2id = {word: idx for idx, word in enumerate(id2word)}
+    wv_vocab = set(id2word)
+    loop_voc = list(wv_vocab & set(lexicon))
     print("Ratio of word presence: {:.0f}% in embs, {:.0f}% in lex."
           "".format(len(loop_voc) / len(id2word) * 100,
                     len(loop_voc) / len(lexicon) * 100))
     # print('len(lexicon)**:', len(lexicon))
     # print('len(id2word)**:', len(id2word))
 
-    for _ in range(n_iters):
+    for itr_idx in range(n_iters):
         # loop through every node also in ontology (else just use data estimate)
         for word in loop_voc:
-            ctxt_words = set(lexicon[word]) & set(id2word)
+            ctxt_words = set(lexicon[word]) & wv_vocab
             n_ctxt = len(ctxt_words)
             # no neighbor, pass - use data estimate
             if n_ctxt == 0:
                 continue
-            # the weight of the data estimate if the number of neighbors
-            new_vec = n_ctxt * emb.emb_lkup(word, id2word, embeds)
+            # print('**', idx, word, ctxt_words)
+            # the weight of the data estimate is the number of neighbors
+            new_vec = n_ctxt * embeds[word2id[word]]
             # loop over neighbors and add to new vector (currently with weight 1)
             for pp_wrd in ctxt_words:
-                new_vec += emb.emb_lkup(pp_wrd, id2word, new_embeds)
-            new_embeds[id2word.index(word)] = new_vec / (2 * n_ctxt)
+                new_vec += new_embeds[word2id[pp_wrd]]
+            new_embeds[word2id[word]] = new_vec / (2 * n_ctxt)
+
+        prn.progress_bar(itr_idx, n_iters)
+    print()
 
     return new_embeds
 
@@ -103,7 +110,7 @@ def main():
 
     # wvecs = read_word_vecs(argp.in_fpath)
     id2word, embeds_arr = emb.load_embeds_np(argp.in_fpath)
-    embeds_arr = sk_normalize(embeds_arr, axis=1)   # TODO: remove!?
+    # embeds_arr = sk_normalize(embeds_arr, axis=1)   # TODO: remove!?
     lexicon = read_lexicon(argp.lexicon)
 
     # Enrich the word vectors using ppdb and print the enriched vectors
